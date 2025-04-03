@@ -1,9 +1,13 @@
 """诗歌比赛配置模块"""
 
+import os
+import json
 import logging
-from typing import Dict, Any
-from dataclasses import dataclass
-from exceptions import PromptError
+import tomli
+from typing import Dict, Any, Optional
+from dataclasses import dataclass, field
+from pathlib import Path
+from projects.ai_poetry_contest.exceptions import PromptError
 
 # 评分标准
 SCORING_CRITERIA = """评分标准：
@@ -45,6 +49,33 @@ SCORING_PROMPT = """请对以下诗歌进行评分和分析：
 
 logger = logging.getLogger(__name__)
 
+def load_model_configs() -> Dict[str, Any]:
+    """从 config.toml 加载模型配置
+    
+    Returns:
+        Dict[str, Any]: 模型配置字典
+    """
+    try:
+        # 获取 OpenManus 根目录
+        openmanus_root = Path(__file__).parent.parent.parent
+        config_path = openmanus_root / "config" / "config.toml"
+        
+        if not config_path.exists():
+            logger.warning(f"配置文件不存在: {config_path}")
+            return {}
+            
+        with open(config_path, "rb") as f:
+            config = tomli.load(f)
+            
+        # 获取 LLM 配置
+        llm_configs = config.get("llm", {})
+        logger.info(f"成功加载 {len(llm_configs)} 个模型配置")
+        return llm_configs
+        
+    except Exception as e:
+        logger.error(f"加载模型配置失败: {e}")
+        return {}
+
 @dataclass
 class PoetryContestConfig:
     """诗歌比赛配置类"""
@@ -61,6 +92,9 @@ class PoetryContestConfig:
 
     # 评分提示词模板
     scoring_prompt = SCORING_PROMPT
+    
+    # 模型配置
+    model_configs: Dict[str, Any] = field(default_factory=load_model_configs)
 
     def get_creation_prompt(self) -> str:
         """获取创作提示词
