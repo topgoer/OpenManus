@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import tomli
-from projects.ai_poetry_contest.exceptions import PromptError
+from exceptions import PromptError
 
 
 # 评分标准
