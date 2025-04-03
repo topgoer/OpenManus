@@ -1,7 +1,7 @@
 import asyncio
-import logging
-from pathlib import Path
 import sys
+from pathlib import Path
+
 
 # 获取 OpenManus 根目录
 openmanus_root = Path(__file__).parent.parent.parent.parent
@@ -9,6 +9,7 @@ sys.path.insert(0, str(openmanus_root))
 
 from app.agent.manus import Manus
 from app.logger import logger
+
 
 # 测试用的提示词
 TEST_PROMPT = "写一首关于人工智能的诗"
@@ -20,8 +21,9 @@ LLM_CONFIGS = [
     {"name": "Gemma 4B", "config": "llm.gemma"},
     {"name": "Phi 4", "config": "llm.phi"},
     {"name": "Mistral", "config": "llm.mistral"},
-    {"name": "DeepSeek API", "config": "llm.deepseek_api"}
+    {"name": "DeepSeek API", "config": "llm.deepseek_api"},
 ]
+
 
 async def test_poetry_creation():
     """测试诗歌创作"""
@@ -35,6 +37,7 @@ async def test_poetry_creation():
         except Exception as e:
             logger.error(f"Error with {llm_config['name']}: {e}")
 
+
 async def main():
     """主函数"""
     try:
@@ -44,5 +47,6 @@ async def main():
     except Exception as e:
         logger.error(f"测试出错: {e}")
 
+
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

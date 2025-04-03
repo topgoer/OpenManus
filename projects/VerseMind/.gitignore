@@ -34,4 +34,4 @@ htmlcov/
 results/*
 !results/human_poem_example.txt
 !results/poetry_vectors/poems.json
-!results/poetry_vectors/index.faiss 
+!results/poetry_vectors/index.faiss
