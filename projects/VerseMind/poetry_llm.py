@@ -204,7 +204,9 @@ class PoetryLLM(LLM):
                             )
                             raise
                 except httpx.ConnectError as e:
-                    logger.error(f"[PoetryLLM] 连接错误: {str(e)}, 请检查服务器是否正在运行")
+                    logger.error(
+                        f"[PoetryLLM] 连接错误: {str(e)}, 请检查服务器是否正在运行"
+                    )
                     raise
                 except httpx.TimeoutException as e:
                     logger.error(f"[PoetryLLM] 请求超时: {str(e)}, 请检查网络连接")
@@ -215,7 +217,9 @@ class PoetryLLM(LLM):
                     )
                     raise
                 except Exception as e:
-                    logger.error(f"[PoetryLLM] 请求错误: {str(e)}, 类型: {type(e).__name__}")
+                    logger.error(
+                        f"[PoetryLLM] 请求错误: {str(e)}, 类型: {type(e).__name__}"
+                    )
                     raise
         except Exception as e:
             logger.error(f"[PoetryLLM] 发送请求失败: {str(e)}")
@@ -431,7 +435,9 @@ class PoetryLLM(LLM):
 
                 # 如果是人类诗歌，记录特殊日志
                 if is_human_poem:
-                    logger.info(f"[PoetryLLM] 已完成对人类诗歌的评价，总分: {total_score}")
+                    logger.info(
+                        f"[PoetryLLM] 已完成对人类诗歌的评价，总分: {total_score}"
+                    )
 
                 logger.debug(f"[PoetryLLM] 解析后的评分结果: {result}")
 
@@ -543,9 +549,9 @@ class PoetryLLM(LLM):
                     "model": self.model,
                     "prompt": content,
                     "stream": stream,
-                    "temperature": temperature
-                    if temperature is not None
-                    else self.temperature,
+                    "temperature": (
+                        temperature if temperature is not None else self.temperature
+                    ),
                     "max_tokens": self.max_tokens,
                 }
 

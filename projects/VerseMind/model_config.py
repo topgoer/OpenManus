@@ -1,4 +1,5 @@
 """模型配置类"""
+
 from dataclasses import dataclass
 from typing import Dict
 

@@ -42,7 +42,7 @@ MULTIMODAL_MODELS = [
     # Ollama multimodal models
     "llama3.2-vision",
     "gemma3:4b",
-    "llava:v1.6"
+    "llava:v1.6",
 ]
 
 
@@ -548,9 +548,7 @@ class LLM:
             multimodal_content = (
                 [{"type": "text", "text": content}]
                 if isinstance(content, str)
-                else content
-                if isinstance(content, list)
-                else []
+                else content if isinstance(content, list) else []
             )
 
             # Add images to content

@@ -234,7 +234,9 @@ class AIPoetryContest:
                                 f"{poet.model_name} 完成了对诗歌 {poem_info['id']} 的评价"
                             )
                         else:
-                            logger.error(f"{poet.model_name} 评价诗歌 {poem_info['id']} 失败")
+                            logger.error(
+                                f"{poet.model_name} 评价诗歌 {poem_info['id']} 失败"
+                            )
                     except Exception as e:
                         logger.error(f"{poet.model_name} 评价诗歌出错: {e}")
                         continue
@@ -243,7 +245,9 @@ class AIPoetryContest:
             if self.vector_db:
                 poems_count = len(self.vector_db.get_all_poems())
                 db_path = self.vector_db.db_path.absolute()
-                logger.info(f"向量数据库统计: 共存储 {poems_count} 首诗歌，存储路径: {db_path}")
+                logger.info(
+                    f"向量数据库统计: 共存储 {poems_count} 首诗歌，存储路径: {db_path}"
+                )
 
                 # 显示一些示例查询
                 if poems_count > 0:
@@ -264,7 +268,9 @@ class AIPoetryContest:
                 anonymous_file = self.results_dir / "anonymous_poems.json"
                 with open(anonymous_file, "w", encoding="utf-8") as f:
                     json.dump(self.anonymous_poems, f, ensure_ascii=False, indent=2)
-                logger.info(f"已创建匿名诗歌文件，共 {len(self.anonymous_poems)} 首诗歌")
+                logger.info(
+                    f"已创建匿名诗歌文件，共 {len(self.anonymous_poems)} 首诗歌"
+                )
 
                 # 断言匿名诗歌文件包含所有诗歌，包括人类诗歌（如果存在）
                 with open(anonymous_file, "r", encoding="utf-8") as f:
@@ -385,7 +391,9 @@ class AIPoetryContest:
             if self.vector_db:
                 poems_count = len(self.vector_db.get_all_poems())
                 db_path = self.vector_db.db_path.absolute()
-                logger.info(f"向量数据库最终统计: 共存储 {poems_count} 首诗歌，存储路径: {db_path}")
+                logger.info(
+                    f"向量数据库最终统计: 共存储 {poems_count} 首诗歌，存储路径: {db_path}"
+                )
 
                 # 显示一些示例查询
                 if poems_count > 0:
