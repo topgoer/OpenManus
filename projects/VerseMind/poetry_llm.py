@@ -87,6 +87,7 @@ class PoetryLLM(LLM):
         """
         super().__init__(config_name=config_name, llm_config=llm_config)
         self._last_request_time = 0
+        self._response_cache = {}  # 添加响应缓存属性
 
     @classmethod
     def set_show_prompts(cls, show: bool) -> None:
@@ -147,19 +148,20 @@ class PoetryLLM(LLM):
         # 检查请求类型并增加相应的计数器
         data.get("prompt", "")
 
-        # 根据当前阶段增加相应的计数器
+        # 根据当前阶段获取请求计数并增加计数器
         if PoetryLLM._current_stage == "评论":
-            PoetryLLM._evaluation_request_count += 1
             request_count = PoetryLLM._evaluation_request_count
             request_stage = "评论"
+            # 增加评论请求计数器
+            PoetryLLM._evaluation_request_count += 1
         else:
-            PoetryLLM._creation_request_count += 1
             request_count = PoetryLLM._creation_request_count
             request_stage = "创作"
+            # 增加创作请求计数器
+            PoetryLLM._creation_request_count += 1
 
-        # 只在第一次发送请求时记录日志消息
-        if request_count == 1:
-            logger.info(f"[PoetryLLM] 发送{request_stage}请求 #{request_count}")
+        # 不再在这里显示模型信息，避免重复
+        # logger.info(f"🤖 正在使用模型 {self.model} 进行{request_stage}... (第{request_count + 1}次请求)")
 
         # 添加请求间隔检查
         current_time = time.time()
@@ -173,7 +175,7 @@ class PoetryLLM(LLM):
             api_endpoint = f"{base_url}/api/generate"
 
             # 记录请求信息
-            logger.info(
+            logger.debug(
                 f"[PoetryLLM] HTTP Request: POST {api_endpoint} [{request_stage}阶段 第{request_count}次请求]"
             )
 
@@ -330,7 +332,7 @@ class PoetryLLM(LLM):
             prompt: 评分提示词，如果提供则使用此提示词
 
         Returns:
-            Optional[Dict]: 评估结果
+            Optional[Dict]: 评估结果，如果评论失败则返回None
         """
         try:
             # 设置当前阶段为评论
@@ -406,10 +408,32 @@ class PoetryLLM(LLM):
                 # 尝试从响应中提取评分部分
                 score_match = re.search(r"总分：(\d+)", response)
                 if not score_match:
-                    logger.error("[PoetryLLM] 未找到总分")
-                    return None
-
-                total_score = int(score_match.group(1))
+                    # 尝试其他可能的格式
+                    score_match = re.search(r"总评分：(\d+)", response)
+                    if not score_match:
+                        # 尝试从表格中提取分数并计算总分
+                        logger.warning("[PoetryLLM] 未找到总分，尝试从表格中提取分数")
+                        # 查找所有可能的分数
+                        score_matches = re.findall(r"(\d+\.?\d*)\s*分", response)
+                        if score_matches:
+                            # 将找到的分数转换为浮点数并计算平均值
+                            scores = [float(score) for score in score_matches]
+                            total_score = int(
+                                sum(scores) / len(scores) * 10
+                            )  # 转换为60分制
+                            logger.info(
+                                f"[PoetryLLM] 从表格中提取的分数: {scores}, 计算得到总分: {total_score}"
+                            )
+                        else:
+                            # 如果仍然找不到分数，设置总分为None，但仍然保留评论
+                            logger.warning(
+                                "[PoetryLLM] 无法提取分数，评论有效但不参与排名"
+                            )
+                            total_score = None
+                    else:
+                        total_score = int(score_match.group(1))
+                else:
+                    total_score = int(score_match.group(1))
 
                 # 提取维度评分
                 dimensions = {}
@@ -418,9 +442,45 @@ class PoetryLLM(LLM):
                     dimension, score = match.groups()
                     dimensions[dimension] = int(score)
 
+                # 如果维度评分为空，尝试从表格中提取
+                if not dimensions:
+                    # 尝试从表格中提取维度评分
+                    table_pattern = r"\|.*?(\w+).*?\|.*?(\d+\.?\d*).*?\|"
+                    for match in re.finditer(table_pattern, response):
+                        dimension, score = match.groups()
+                        dimensions[dimension] = int(float(score))
+
+                # 如果仍然没有维度评分，使用空字典，但仍然保留评论
+                if not dimensions:
+                    logger.warning("[PoetryLLM] 无法提取维度评分，评论有效但不参与排名")
+                    dimensions = {}
+
                 # 提取点评
                 comment_match = re.search(r"点评：(.+?)(?=\n|$)", response)
                 comment = comment_match.group(1) if comment_match else "无"
+
+                # 如果点评为空，尝试提取其他可能的点评内容
+                if comment == "无":
+                    # 尝试查找可能的点评内容
+                    comment_patterns = [
+                        r"评语：(.+?)(?=\n|$)",
+                        r"评价：(.+?)(?=\n|$)",
+                        r"点评：(.+?)(?=\n|$)",
+                        r"总结：(.+?)(?=\n|$)",
+                    ]
+                    for pattern in comment_patterns:
+                        comment_match = re.search(pattern, response)
+                        if comment_match:
+                            comment = comment_match.group(1)
+                            break
+
+                    # 如果仍然没有找到点评，尝试提取整个响应作为点评
+                    if comment == "无":
+                        # 尝试提取整个响应作为点评
+                        comment = response.strip()
+                        if len(comment) > 500:  # 如果响应太长，截取前500个字符
+                            comment = comment[:500] + "..."
+                        logger.info("[PoetryLLM] 使用整个响应作为点评")
 
                 # 评论阶段结束，记录请求数
                 logger.info(
@@ -445,10 +505,12 @@ class PoetryLLM(LLM):
 
             except Exception as e:
                 logger.error(f"解析评分结果失败: {e}")
+                # 返回None，表示评论无效
                 return None
 
         except Exception as e:
             logger.error(f"评估诗歌失败: {e}")
+            # 返回None，表示评论无效
             return None
 
     def _clean_poem_for_evaluation(self, poem: str) -> str:
@@ -514,33 +576,47 @@ class PoetryLLM(LLM):
         stream: bool = True,
         temperature: Optional[float] = None,
     ) -> str:
-        """重写父类的 ask 方法以支持 Ollama 的 /api/generate 端点
-
-        Args:
-            messages: 消息列表
-            system_msgs: 系统消息列表
-            stream: 是否使用流式响应
-            temperature: 温度参数
-
-        Returns:
-            str: 生成的响应
-        """
+        """重写父类的 ask 方法以支持 Ollama 的 /api/generate 端点"""
         try:
+            # 显示当前工作的诗人
+            stage = "评论" if PoetryLLM._current_stage == "评论" else "创作"
+
+            # 获取当前请求计数
+            if stage == "评论":
+                request_count = PoetryLLM._evaluation_request_count
+                # 增加计数器
+                PoetryLLM._evaluation_request_count += 1
+            else:
+                request_count = PoetryLLM._creation_request_count
+                # 增加计数器
+                PoetryLLM._creation_request_count += 1
+
+            # 在这里显示模型信息，确保在评论阶段也能看到
+            print(
+                f"\n🤖 正在使用模型 {self.model} 进行{stage}... (第{request_count + 1}次请求)\n"
+            )
+
             # 如果是 Ollama 模型，使用 /api/generate 端点
             if self.api_type == "ollama":
-                # 获取最后一条用户消息
-                last_message = messages[-1]
-                if isinstance(last_message, dict):
-                    content = last_message.get("content", "")
-                else:
-                    content = last_message.content
+                # 合并消息
+                content = ""
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        content += f"{msg['role']}: {msg['content']}\n\n"
+                    else:
+                        content += f"{msg.role}: {msg.content}\n\n"
 
-                # 检查是否是重复的提示词
-                cache_key = f"{content}_{temperature}_{self.max_tokens}"
-                if (
-                    hasattr(self, "_response_cache")
-                    and cache_key in self._response_cache
-                ):
+                # 添加系统消息
+                if system_msgs:
+                    for msg in system_msgs:
+                        if isinstance(msg, dict):
+                            content = f"{msg['role']}: {msg['content']}\n\n" + content
+                        else:
+                            content = f"{msg.role}: {msg.content}\n\n" + content
+
+                # 检查缓存
+                cache_key = f"{self.model}:{content}:{stream}:{temperature}"
+                if cache_key in self._response_cache:
                     logger.debug("[PoetryLLM] 使用缓存的响应")
                     return self._response_cache[cache_key]
 
@@ -570,7 +646,8 @@ class PoetryLLM(LLM):
                     # 使用当前阶段
                     stage = PoetryLLM._current_stage
 
-                    logger.info(f"[PoetryLLM] {self.model} 正在{stage}...")  # 开始提示
+                    # 不再输出重复的日志
+                    # logger.info(f"[PoetryLLM] {self.model} 正在{stage}...")  # 开始提示
 
                     # 解析流式响应
                     lines = response_text.strip().split("\n")
@@ -613,8 +690,6 @@ class PoetryLLM(LLM):
                         result = ""
 
                 # 缓存响应
-                if not hasattr(self, "_response_cache"):
-                    self._response_cache = {}
                 self._response_cache[cache_key] = result
 
                 return result
