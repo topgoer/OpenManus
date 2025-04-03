@@ -12,7 +12,7 @@ class ModelInitializationError(PoetryContestError):
     """模型初始化错误"""
     pass
 
-class PromptError(PoetryContestError):
+class PromptError(Exception):
     """提示词错误"""
     pass
 

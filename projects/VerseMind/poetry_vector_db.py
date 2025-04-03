@@ -9,9 +9,6 @@ from sentence_transformers import SentenceTransformer
 import pickle
 from utils.faiss_utils import get_faiss_index, save_faiss_index, load_faiss_index
 
-# 配置FAISS只使用CPU
-os.environ['FAISS_NO_GPU'] = '1'
-
 class PoetryVectorDB:
     """诗歌向量数据库类，用于存储和检索诗歌的向量表示"""
     

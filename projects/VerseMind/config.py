@@ -7,7 +7,7 @@ import tomli
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 from pathlib import Path
-from projects.ai_poetry_contest.exceptions import PromptError
+from exceptions import PromptError
 
 # 评分标准
 SCORING_CRITERIA = """评分标准：
