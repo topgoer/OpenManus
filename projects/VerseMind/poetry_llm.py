@@ -34,25 +34,30 @@ logger = get_logger(__name__)
 
 
 def get_available_models() -> List[Tuple[str, str]]:
-    """获取所有可用的模型配置
+    """获取可用模型列表
 
     Returns:
-        List[Tuple[str, str]]: 模型列表，每个元素为 (模型名称, 模型类型)
+        List[Tuple[str, str]]: 可用模型列表，每个元素为 (模型名称, API类型)
     """
-    models = []
-
-    # 遍历所有配置
-    for name, settings in config.llm.items():
-        # 检查配置是否被注释或是否为默认配置
-        if name.startswith("#") or name == "default":
+    # 获取可用模型列表
+    available_models = []
+    for model_name, model_config in config.llm.items():
+        # 跳过 default 模型
+        if model_name == "default":
             continue
 
-        if isinstance(settings, LLMSettings):
-            # 使用配置名称作为模型名称
-            models.append((name, settings.api_type))
-            logger.info(f"添加模型: {name}，API类型: {settings.api_type}")
+        # 处理不同类型的配置
+        if isinstance(model_config, dict):
+            api_type = model_config.get("api_type", "unknown")
+        else:
+            api_type = model_config.api_type
 
-    return models
+        available_models.append((model_name, api_type))
+        logger.info(f"添加模型: {model_name}，API类型: {api_type}")
+
+    # 按模型名称排序
+    available_models.sort(key=lambda x: x[0])
+    return available_models
 
 
 def debug_log(func):
@@ -87,6 +92,7 @@ class PoetryLLM(LLM):
         """
         super().__init__(config_name=config_name, llm_config=llm_config)
         self._last_request_time = 0
+        self.llm_config = llm_config  # 添加 llm_config 属性
 
     @classmethod
     def set_show_prompts(cls, show: bool) -> None:
@@ -123,6 +129,10 @@ class PoetryLLM(LLM):
         # 创建诗人列表
         poets = []
         for i, (model_name, api_type) in enumerate(available_models, 1):
+            # 跳过 default 模型
+            if model_name == "default":
+                continue
+
             # 创建诗人信息，包含诗人名字和模型名称
             poet = {
                 "name": f"诗人{i}",  # 诗人名字
@@ -402,10 +412,10 @@ class PoetryLLM(LLM):
                 # 尝试从响应中提取评分部分
                 score_match = re.search(r"总分：(\d+)", response)
                 if not score_match:
-                    logger.error("[PoetryLLM] 未找到总分")
-                    return None
-
-                total_score = int(score_match.group(1))
+                    logger.debug("[PoetryLLM] 未找到总分，将使用默认值0")
+                    total_score = 0
+                else:
+                    total_score = int(score_match.group(1))
 
                 # 提取维度评分
                 dimensions = {}

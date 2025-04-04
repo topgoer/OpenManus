@@ -1,6 +1,7 @@
 """AI诗歌比赛核心逻辑"""
 
 import json
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,11 @@ from logger_config import get_logger
 from poetry_llm import PoetryLLM
 from poetry_vector_db import PoetryVectorDB
 
+
+# 忽略 PyTorch flash attention 警告
+warnings.filterwarnings(
+    "ignore", message=".*Torch was not compiled with flash attention.*"
+)
 
 # 获取日志记录器
 logger = get_logger(__name__)
@@ -44,10 +50,22 @@ class AIPoetryContest:
         """初始化后的处理"""
         # 创建结果目录
         self.results_dir.mkdir(parents=True, exist_ok=True)
+
         # 从主题中移除"标题："前缀
         theme_content = self.theme.replace("标题：", "").strip()
-        logger.info(f"已初始化比赛，主题: {theme_content}")
-        logger.info(f"诗人数量: {len(self.poets)}")
+        logger.info(f"\n已初始化比赛，主题: {theme_content}\n")
+
+        # 检查每个诗人的模型配置
+        for i, poet in enumerate(self.poets, 1):
+            # 添加详细的模型配置日志
+            logger.info(f"{i}. {poet.name}:")
+            logger.info(f"   - 模型名称: {poet.model_name}")
+            logger.info(f"   - 模型配置: {poet.model.llm_config}")
+            if poet.model_name == "default":
+                logger.warning(f"   ⚠️ 警告: 发现默认模型名称 'default'，这可能导致问题")
+                logger.warning(f"   建议: 请在配置文件中使用实际的模型名称（如 'gemma3:4b'）替换 'default'")
+
+        logger.info(f"\n共有 {len(self.poets)} 位诗人参赛\n")
 
         # 初始化参考内容和提示词
         self.reference_content = ""
@@ -70,11 +88,22 @@ class AIPoetryContest:
             return False
 
         try:
+            # 检查模型配置
+            logger.info("\n========== 模型配置检查 ==========")
+            for poet in self.poets:
+                logger.info(f"\n检查 {poet.name} 的模型配置:")
+                logger.info(f"- 模型名称: {poet.model_name}")
+
+                # 检查是否使用了default
+                if poet.model_name == "default":
+                    logger.error(f"⚠️ 错误: {poet.name} 使用了默认模型名称 'default'")
+                    logger.error("这会导致模型调用失败，请修改配置文件使用实际的模型名称")
+                    return False
+            logger.info("\n================================\n")
+
             # 读取参考内容
+            reference_file = Path(__file__).parent / "prompts" / "reference_content.txt"
             try:
-                reference_file = (
-                    Path(__file__).parent / "prompts" / "reference_content.txt"
-                )
                 with open(reference_file, "r", encoding="utf-8") as f:
                     self.reference_content = f.read()
 
@@ -85,9 +114,11 @@ class AIPoetryContest:
                 return False
 
             # 读取创作提示词
+            creation_prompt_file = (
+                Path(__file__).parent / "prompts" / "creation_prompt.txt"
+            )
             try:
-                prompt_file = Path(__file__).parent / "prompts" / "creation_prompt.txt"
-                with open(prompt_file, "r", encoding="utf-8") as f:
+                with open(creation_prompt_file, "r", encoding="utf-8") as f:
                     self.creation_prompt = f.read()
 
                 # 断言创作提示词不为空
@@ -97,9 +128,11 @@ class AIPoetryContest:
                 return False
 
             # 读取评分提示词
+            scoring_prompt_file = (
+                Path(__file__).parent / "prompts" / "scoring_prompt.txt"
+            )
             try:
-                prompt_file = Path(__file__).parent / "prompts" / "scoring_prompt.txt"
-                with open(prompt_file, "r", encoding="utf-8") as f:
+                with open(scoring_prompt_file, "r", encoding="utf-8") as f:
                     self.scoring_prompt = f.read()
 
                 # 断言评分提示词不为空
@@ -125,7 +158,8 @@ class AIPoetryContest:
                         prompt = f"{prompt}\n\n参考内容：\n{self.reference_content}"
 
                     # 创建诗歌
-                    logger.info(f"{poet.model_name} 正在创作...")
+                    logger.info(f"{poet.name}（{poet.model_name}）正在创作...")
+                    logger.info(f"使用创作提示词文件: {creation_prompt_file}")
                     poem = await poet.model.create_poem(self.theme, prompt)
 
                     if poem:
@@ -138,7 +172,7 @@ class AIPoetryContest:
                         }
                         self.anonymous_poems.append(poem_info)
                         poet.poems.append(poem_info)
-                        logger.info(f"{poet.model_name} 创作成功")
+                        logger.info(f"{poet.name}（{poet.model_name}）创作成功")
 
                         # 添加到向量数据库
                         metadata = {
@@ -148,11 +182,11 @@ class AIPoetryContest:
                             "timestamp": datetime.now().isoformat(),
                         }
                         self.vector_db.add_poem(poem, metadata)
-                        logger.info(f"已将诗歌添加到向量数据库")
+                        logger.info(f"已将诗歌添加到向量数据库: {self.vector_db.db_path}")
                     else:
-                        logger.error(f"{poet.model_name} 创作失败")
+                        logger.error(f"{poet.name}（{poet.model_name}）创作失败")
                 except Exception as e:
-                    logger.error(f"{poet.model_name} 创作出错: {e}")
+                    logger.error(f"{poet.name}（{poet.model_name}）创作出错: {e}")
                     continue
 
             if not self.anonymous_poems:
@@ -168,6 +202,7 @@ class AIPoetryContest:
             if human_poem_path.exists():
                 try:
                     # 读取人类诗歌文件
+                    logger.info(f"读取人类诗歌文件: {human_poem_path}")
                     with open(human_poem_path, "r", encoding="utf-8") as f:
                         human_poem = f.read()
 
@@ -176,7 +211,7 @@ class AIPoetryContest:
 
                     # 添加人类诗歌到匿名诗歌文件
                     if self.add_human_poem(human_poem):
-                        logger.info("人类诗歌已添加到评价中")
+                        logger.info(f"人类诗歌已添加到评价中: {human_poem_path}")
                         human_poem_added = True
                     else:
                         logger.error("添加人类诗歌失败")
@@ -202,13 +237,14 @@ class AIPoetryContest:
                         assert formatted_scoring_prompt, "格式化后的评分提示词不能为空"
 
                         # 评价诗歌
-                        logger.info(f"{poet.model_name} 正在评价...")
+                        logger.info(f"{poet.name}（{poet.model_name}）正在评价...")
+                        logger.info(f"使用评分提示词文件: {scoring_prompt_file}")
 
                         # 检查是否是人类诗歌
                         is_human_poem = poem_info.get("model") == "human"
                         if is_human_poem:
                             logger.info(
-                                f"{poet.model_name} 正在评价人类诗歌，ID: {poem_info['id']}"
+                                f"{poet.name}（{poet.model_name}）正在评价人类诗歌，ID: {poem_info['id']}"
                             )
 
                         # 使用格式化后的评分提示词，并设置 is_human_poem 参数
@@ -225,18 +261,27 @@ class AIPoetryContest:
                                 "poem_id": poem_info["id"],
                                 "poet": poet.name,
                                 "model": poet.model_name,
-                                "score": evaluation["total_score"],
-                                "dimensions": evaluation["dimensions"],
-                                "comment": evaluation["comment"],
+                                "score": evaluation.get("total_score", 0),
+                                "dimensions": evaluation.get("dimensions", {}),
+                                "comment": evaluation.get("comment", "未提供评论"),
                             }
                             poet.evaluations.append(evaluation_info)
                             logger.info(
-                                f"{poet.model_name} 完成了对诗歌 {poem_info['id']} 的评价"
+                                f"{poet.name}（{poet.model_name}）完成了对诗歌 {poem_info['id']} 的评价"
                             )
+
+                            # 只显示模型返回的维度
+                            if evaluation.get("dimensions"):
+                                for dimension, score in evaluation[
+                                    "dimensions"
+                                ].items():
+                                    logger.info(f"{dimension}: {score}")
                         else:
-                            logger.error(f"{poet.model_name} 评价诗歌 {poem_info['id']} 失败")
+                            logger.error(
+                                f"{poet.name}（{poet.model_name}）评价诗歌 {poem_info['id']} 失败"
+                            )
                     except Exception as e:
-                        logger.error(f"{poet.model_name} 评价诗歌出错: {e}")
+                        logger.error(f"{poet.name}（{poet.model_name}）评价诗歌出错: {e}")
                         continue
 
             # 显示向量数据库统计信息
@@ -258,13 +303,53 @@ class AIPoetryContest:
             else:
                 logger.warning("向量数据库未初始化，无法显示统计信息")
 
+            # 显示最终排名
+            await self._show_final_ranking()
+
+            # 添加RAG分析报告
+            logger.info("\n========== RAG分析报告 ==========")
+            for i, poem in enumerate(self.anonymous_poems):
+                logger.info(f"\n[诗歌{i+1}分析]")
+                logger.info(f"标题：{poem['content'][:50]}...")
+
+                # 1. 检索相似诗歌
+                similar_poems = self.vector_db.search_similar_poems(
+                    poem["content"], k=2
+                )
+                if similar_poems:
+                    # 计算独特性
+                    avg_similarity = sum(score for _, score in similar_poems) / len(
+                        similar_poems
+                    )
+                    uniqueness = 1 - avg_similarity
+                    logger.info(f"独特性指数：{uniqueness:.2f}")
+
+                    # 展示意象来源
+                    for similar_poem, similarity in similar_poems:
+                        if similarity > 0.5:  # 只显示相似度较高的
+                            shared_words = set(poem["content"]) & set(
+                                similar_poem["content"]
+                            )
+                            if shared_words:
+                                logger.info(f"共享意象：{''.join(shared_words)}")
+
+                # 2. 分析创新点
+                if uniqueness > 0.7:
+                    logger.info("创新亮点：意象独特，形式创新")
+                elif uniqueness > 0.5:
+                    logger.info("创新亮点：在传统意象基础上有所发展")
+                else:
+                    logger.info("建议：可以尝试更独特的表达方式")
+
+            logger.info("\n================================")
+
             # 保存比赛结果
             try:
                 # 保存匿名诗歌
                 anonymous_file = self.results_dir / "anonymous_poems.json"
                 with open(anonymous_file, "w", encoding="utf-8") as f:
                     json.dump(self.anonymous_poems, f, ensure_ascii=False, indent=2)
-                logger.info(f"已创建匿名诗歌文件，共 {len(self.anonymous_poems)} 首诗歌")
+                logger.info(f"已创建匿名诗歌文件: {anonymous_file}")
 
                 # 断言匿名诗歌文件包含所有诗歌，包括人类诗歌（如果存在）
                 with open(anonymous_file, "r", encoding="utf-8") as f:
@@ -290,11 +375,12 @@ class AIPoetryContest:
                         )
                         with open(evaluation_file, "w", encoding="utf-8") as f:
                             json.dump(poet.evaluations, f, ensure_ascii=False, indent=2)
+                        logger.info(f"已保存评价结果: {evaluation_file}")
             except Exception as e:
                 logger.error(f"保存评价结果失败: {e}")
                 return False
 
-            logger.info(f"比赛结果已保存到 {self.results_dir} 目录")
+            logger.info(f"比赛结果已保存到目录: {self.results_dir}")
             return True
 
         except Exception as e:
@@ -511,3 +597,38 @@ class AIPoetryContest:
         except Exception as e:
             logger.error(f"搜索相似诗歌时出错: {e}")
             return []
+
+    async def _show_final_ranking(self) -> bool:
+        """显示最终排名"""
+        try:
+            # 读取匿名诗歌文件
+            anonymous_file = self.results_dir / "anonymous_poems.json"
+            if not anonymous_file.exists():
+                logger.error("匿名诗歌文件不存在")
+                return False
+
+            with open(anonymous_file, "r", encoding="utf-8") as f:
+                json.load(f)
+
+            # 计算每个诗人的平均得分
+            poet_scores = {}
+            for poet in self.poets:
+                if poet.evaluations:
+                    total_score = sum(e["score"] for e in poet.evaluations)
+                    average_score = total_score / len(poet.evaluations)
+                    poet_scores[poet.name] = average_score
+
+            # 按得分排序
+            sorted_poets = sorted(poet_scores.items(), key=lambda x: x[1], reverse=True)
+
+            # 显示最终排名
+            logger.info("\n========== 最终排名 ==========")
+            for i, (name, score) in enumerate(sorted_poets, 1):
+                logger.info(f"{i}. {name} - 得分: {score:.2f}")
+            logger.info("\n================================")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"显示最终排名失败: {str(e)}")
+            return False
